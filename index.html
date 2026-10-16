@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Energy Cursor</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        margin: 0;
+        overflow: hidden;
+        background: #050510;
+        color: white;
+        font-family: Tahoma, sans-serif;
+        touch-action: none;
+      }
+      canvas {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 0;
+        touch-action: none;
+      }
+      .info {
+        position: fixed;
+        top: 12%;
+        left: 0;
+        width: 100%;
+        text-align: center;
+        pointer-events: none;
+        z-index: 1;
+      }
+      h1 {
+        margin: 0;
+        font-size: clamp(28px, 6vw, 54px);
+        color: #a8faff;
+        text-shadow: 0 0 25px #00d9ff;
+      }
+      p {
+        color: #a5a5c7;
+        font-size: 15px;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="canvas"></canvas>
+
+    <div class="info">
+      <h1>ENERGY CURSOR</h1>
+      <p>حرّك المؤشر لتطلق الطاقة</p>
+    </div>
+
+    <script>
+      const canvas = document.getElementById("canvas");
+      const ctx = canvas.getContext("2d", { alpha: false });
+
+      const MAX = 800;
+      const HUES = 24;
+      const SPRITE = 48;
+
+      let w = 0,
+        h = 0;
+
+      function resize() {
+        w = canvas.width = window.innerWidth;
+        h = canvas.height = window.innerHeight;
+        ctx.fillStyle = "#050510";
+        ctx.fillRect(0, 0, w, h);
+      }
+      window.addEventListener("resize", resize);
+      resize();
+
+      const sprites = [];
+      for (let i = 0; i < HUES; i++) {
+        const c = document.createElement("canvas");
+        c.width = c.height = SPRITE;
+        const g = c.getContext("2d");
+        const hue = (i / HUES) * 360;
+        const grad = g.createRadialGradient(
+          SPRITE / 2,
+          SPRITE / 2,
+          0,
+          SPRITE / 2,
+          SPRITE / 2,
+          SPRITE / 2
+        );
+        grad.addColorStop(0, `hsla(${hue}, 100%, 85%, 1)`);
+        grad.addColorStop(0.25, `hsla(${hue}, 100%, 65%, 0.8)`);
+        grad.addColorStop(1, `hsla(${hue}, 100%, 50%, 0)`);
+        g.fillStyle = grad;
+        g.fillRect(0, 0, SPRITE, SPRITE);
+        sprites.push(c);
+      }
+
+      const X = new Float32Array(MAX);
+      const Y = new Float32Array(MAX);
+      const VX = new Float32Array(MAX);
+      const VY = new Float32Array(MAX);
+      const LF = new Float32Array(MAX);
+      const DC = new Float32Array(MAX);
+      const SZ = new Float32Array(MAX);
+      const HI = new Uint8Array(MAX);
+      let n = 0;
+      let hue = 180;
+
+      function spawn(x, y, burst) {
+        if (n >= MAX) return;
+        const a = Math.random() * 6.2832;
+        const s = burst ? Math.random() * 9 + 2 : Math.random() * 3 + 0.5;
+        X[n] = x;
+        Y[n] = y;
+        VX[n] = Math.cos(a) * s;
+        VY[n] = Math.sin(a) * s;
+        LF[n] = 1;
+        DC[n] = burst ? 0.012 : 0.025;
+        SZ[n] = (Math.random() * 3 + 1) * 4;
+        HI[n] = ((((hue + Math.random() * 70) % 360) / 360) * HUES) | 0;
+        n++;
+      }
+
+      let px = -1,
+        py = -1;
+      let tx = -1,
+        ty = -1;
+      let moved = false;
+      let burstX = 0,
+        burstY = 0,
+        burstPending = false;
+
+      window.addEventListener(
+        "pointermove",
+        (e) => {
+          tx = e.clientX;
+          ty = e.clientY;
+          moved = true;
+        },
+        { passive: true }
+      );
+
+      window.addEventListener(
+        "pointerdown",
+        (e) => {
+          burstX = px = tx = e.clientX;
+          burstY = py = ty = e.clientY;
+          burstPending = true;
+        },
+        { passive: true }
+      );
+
+      function resetPointer() {
+        px = py = -1;
+        moved = false;
+      }
+      window.addEventListener("pointerup", resetPointer);
+      window.addEventListener("pointerleave", resetPointer);
+
+      let last = performance.now();
+
+      function frame(now) {
+        const dt = Math.min((now - last) / 16.667, 3);
+        last = now;
+
+        if (burstPending) {
+          for (let i = 0; i < 70; i++) spawn(burstX, burstY, true);
+          burstPending = false;
+        }
+
+        if (moved) {
+          hue = (hue + 3) % 360;
+          if (px < 0) {
+            px = tx;
+            py = ty;
+          }
+          const dx = tx - px,
+            dy = ty - py;
+          const dist = Math.hypot(dx, dy);
+          const count = Math.min(8, (2 + dist / 14) | 0);
+          for (let i = 1; i <= count; i++) {
+            const t = i / count;
+            spawn(px + dx * t, py + dy * t, false);
+          }
+          px = tx;
+          py = ty;
+          moved = false;
+        }
+
+        ctx.globalCompositeOperation = "source-over";
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = "rgba(5,5,16,0.22)";
+        ctx.fillRect(0, 0, w, h);
+
+        ctx.globalCompositeOperation = "lighter";
+        const fr = Math.pow(0.97, dt);
+
+        for (let i = 0; i < n; ) {
+          LF[i] -= DC[i] * dt;
+          if (LF[i] <= 0) {
+            n--;
+            X[i] = X[n];
+            Y[i] = Y[n];
+            VX[i] = VX[n];
+            VY[i] = VY[n];
+            LF[i] = LF[n];
+            DC[i] = DC[n];
+            SZ[i] = SZ[n];
+            HI[i] = HI[n];
+            continue;
+          }
+          X[i] += VX[i] * dt;
+          Y[i] += VY[i] * dt;
+          VX[i] *= fr;
+          VY[i] *= fr;
+
+          const size = SZ[i] * (0.4 + LF[i] * 0.6);
+          ctx.globalAlpha = LF[i];
+          ctx.drawImage(
+            sprites[HI[i]],
+            X[i] - size,
+            Y[i] - size,
+            size * 2,
+            size * 2
+          );
+          i++;
+        }
+
+        ctx.globalAlpha = 1;
+        requestAnimationFrame(frame);
+      }
+
+      requestAnimationFrame(frame);
+
+      document.addEventListener("visibilitychange", () => {
+        last = performance.now();
+      });
+    </script>
+  </body>
+</html>
